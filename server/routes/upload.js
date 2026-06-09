@@ -106,6 +106,7 @@ router.post(
         name: file.originalname,
         mimetype: file.mimetype,
         size: file.size,
+        buffer: file.buffer,
       }));
 
       return res.json({
@@ -155,6 +156,16 @@ router.post(
             name: entryName,
             size: buffer.length,
             mimetype: "application/pdf",
+            buffer,
+          });
+        }
+
+        if (lowerName.endsWith(".json")) {
+          archivosOriginales.push({
+            name: entryName,
+            size: buffer.length,
+            mimetype: "application/json",
+            buffer,
           });
         }
       }
@@ -196,3 +207,4 @@ router.use((error, _req, res, _next) => {
 });
 
 module.exports = router;
+module.exports.sessionData = sessionData;
