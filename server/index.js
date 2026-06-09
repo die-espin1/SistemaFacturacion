@@ -1,5 +1,6 @@
 const express = require("express");
 const cors = require("cors");
+const uploadRouter = require("./routes/upload");
 
 const app = express();
 const PORT = 3001;
@@ -10,6 +11,7 @@ app.use(
   })
 );
 app.use(express.json());
+app.use("/api", uploadRouter);
 
 app.get("/api/health", (_req, res) => {
   res.json({ status: "ok", message: "IVA Clasificador API running" });
