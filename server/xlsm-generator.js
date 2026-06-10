@@ -66,7 +66,7 @@ async function generateXlsm(resultados, templatePath) {
       .cell(`A${row}`)
       .value(formatDate(item.doc?.identificacion?.fecEmi))
       .style("numberFormat", "dd/mm/yyyy");
-    wsCompras.cell(`B${row}`).value("4. DOCUMENTO TRIBUTARIO ELECTRONICO (DTE)");
+    wsCompras.cell(`B${row}`).value("4. DOCUMENTO TRIBUTARIO ELECTRONICO (DTE)").style("numberFormat", "@");
     wsCompras.cell(`C${row}`).value(tipoDteLabel(item.tipoDte));
     wsCompras.cell(`D${row}`).value(item.doc?.identificacion?.numeroControl || "");
     wsCompras.cell(`E${row}`).value(item.emisor?.nit || item.emisor?.nrc || "");
@@ -97,7 +97,7 @@ async function generateXlsm(resultados, templatePath) {
       .cell(`A${row}`)
       .value(formatDate(item.doc?.identificacion?.fecEmi))
       .style("numberFormat", "dd/mm/yyyy");
-    wsContrib.cell(`B${row}`).value("4. DOCUMENTO TRIBUTARIO ELECTRONICO (DTE)");
+    wsContrib.cell(`B${row}`).value("4. DOCUMENTO TRIBUTARIO ELECTRONICO (DTE)").style("numberFormat", "@");
     wsContrib.cell(`C${row}`).value(tipoDteLabel(item.tipoDte));
     wsContrib.cell(`D${row}`).value("");
     wsContrib.cell(`E${row}`).value(item.doc?.identificacion?.codigoGeneracion || "");
@@ -127,7 +127,7 @@ async function generateXlsm(resultados, templatePath) {
       .cell(`A${row}`)
       .value(formatDate(item.doc?.identificacion?.fecEmi))
       .style("numberFormat", "dd/mm/yyyy");
-    wsCf.cell(`B${row}`).value("4. DOCUMENTO TRIBUTARIO ELECTRONICO (DTE)");
+    wsCf.cell(`B${row}`).value("4. DOCUMENTO TRIBUTARIO ELECTRONICO (DTE)").style("numberFormat", "@");
     wsCf.cell(`C${row}`).value(tipoDteLabel(item.tipoDte));
     wsCf.cell(`D${row}`).value("");
     wsCf.cell(`E${row}`).value(item.doc?.identificacion?.codigoGeneracion || "");
