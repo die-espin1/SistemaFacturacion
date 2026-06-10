@@ -41,13 +41,50 @@ function ensureDeclarante(req, res, next) {
 }
 
 function parseJsonBuffer(buffer, sourceName) {
-  try {
-    return JSON.parse(buffer.toString("utf8"));
-  } catch (error) {
-    const parseError = new Error(`JSON invalido: ${sourceName}`);
-    parseError.statusCode = 400;
-    throw parseError;
+  // Intentar multiples encodings
+  const encodings = ["utf8", "utf16le", "latin1"];
+
+  for (const encoding of encodings) {
+    try {
+      let text = buffer.toString(encoding);
+
+      // Remover BOM (UTF-8 y UTF-16)
+      text = text.replace(/^\uFEFF/, "").trim();
+
+      // Intentar parse directo
+      try {
+        return JSON.parse(text);
+      } catch {
+        // Si falla, buscar primer { o [ valido
+        const start = text.search(/[{[]/);
+        if (start > 0) {
+          return JSON.parse(text.slice(start));
+        }
+      }
+    } catch {
+      continue;
+    }
   }
+
+  // Ultimo intento: el JSON puede estar como string escapado dentro de otro JSON
+  try {
+    const text = buffer.toString("utf8").replace(/^\uFEFF/, "").trim();
+    const outer = JSON.parse(text);
+    // Si hay un campo que es string con JSON adentro
+    for (const val of Object.values(outer)) {
+      if (typeof val === "string" && val.trim().startsWith("{")) {
+        try {
+          return JSON.parse(val);
+        } catch {
+          continue;
+        }
+      }
+    }
+  } catch {}
+
+  const error = new Error(`JSON inválido: ${sourceName}`);
+  error.statusCode = 400;
+  throw error;
 }
 
 function buildCategorias(resultados) {
