@@ -25,6 +25,31 @@ function normalizeBaseName(filename) {
   return path.basename(String(filename || ""), path.extname(String(filename || ""))).toLowerCase();
 }
 
+function buildZipName(declarante) {
+  const nombre = (declarante?.nombre || "DECLARANTE").trim();
+
+  // Detectar formato "APELLIDOS, NOMBRES" (tiene coma)
+  let normalized;
+  if (nombre.includes(",")) {
+    const [apellidos, nombres] = nombre.split(",").map((p) => p.trim());
+    // Reordenar a NOMBRES_APELLIDOS
+    normalized = nombres + " " + apellidos;
+  } else {
+    normalized = nombre;
+  }
+
+  // Limpiar: mayusculas, reemplazar espacios con _, quitar caracteres especiales
+  const clean = normalized
+    .toUpperCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^A-Z0-9\s]/g, "")
+    .trim()
+    .replace(/\s+/g, "_");
+
+  return `IVA_${clean}.zip`;
+}
+
 function buildCategoryMap(resultados) {
   const mapping = new Map();
   const categoryFolders = {
@@ -32,11 +57,20 @@ function buildCategoryMap(resultados) {
     ANEXO_CONTRIBUYENTES: "CONTRIBUYENTES",
     ANEXO_CONSUMIDOR_FINAL: "CONSUMIDOR_FINAL",
     CASILLA_162: "CASILLA_162",
+    DOCUMENTO_LIQUIDACION: "DOCUMENTO_LIQUIDACION",
+    SUJETO_EXCLUIDO: "SUJETO_EXCLUIDO",
   };
 
   for (const [categoria, folder] of Object.entries(categoryFolders)) {
     for (const item of resultados[categoria] || []) {
+      // Mapear por nombre de archivo (sin extension)
       mapping.set(normalizeBaseName(item.filename), folder);
+
+      // Mapear tambien por codigoGeneracion (UUID del DTE)
+      const codigo = item.doc?.identificacion?.codigoGeneracion;
+      if (codigo) {
+        mapping.set(codigo.toLowerCase(), folder);
+      }
     }
   }
 
@@ -70,9 +104,10 @@ router.get("/download/zip", ensureResultados, async (_req, res, next) => {
     const templatePath = path.resolve(__dirname, "../templates/plantillaFinal.xlsm");
     const xlsmBuffer = await generateXlsm(sessionData.resultados, templatePath);
     const categoryMap = buildCategoryMap(sessionData.resultados);
+    const zipName = buildZipName(sessionData.declarante);
 
     res.setHeader("Content-Type", "application/zip");
-    res.setHeader("Content-Disposition", 'attachment; filename="IVA_ABRIL2026.zip"');
+    res.setHeader("Content-Disposition", `attachment; filename="${zipName}"`);
 
     const archive = archiver("zip", { zlib: { level: 9 } });
     archive.on("error", (error) => next(error));
@@ -81,7 +116,9 @@ router.get("/download/zip", ensureResultados, async (_req, res, next) => {
     archive.append(xlsmBuffer, { name: "plantillaFinal_ABRIL2026.xlsm" });
 
     for (const file of sessionData.archivosOriginales || []) {
-      const folder = categoryMap.get(normalizeBaseName(file.name));
+      // Intentar por nombre base primero, luego por UUID en el nombre del archivo
+      const baseName = normalizeBaseName(file.name);
+      const folder = categoryMap.get(baseName) || categoryMap.get(baseName.toLowerCase());
       if (!folder || !file.buffer) {
         continue;
       }
