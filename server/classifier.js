@@ -1,5 +1,5 @@
 function normalizeDoc(json) {
-  const doc = (json && json.DTE) || json || {};
+  const doc = (json && json.DTE) || (json && json.dteJson) || json || {};
 
   return {
     identificacion: doc.identificacion || {},
