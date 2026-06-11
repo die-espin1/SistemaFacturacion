@@ -86,6 +86,11 @@ function parseJsonBuffer(buffer, sourceName) {
   throw error;
 }
 
+function extractCodigoGeneracion(json) {
+  const doc = (json && json.DTE) || (json && json.dteJson) || json || {};
+  return String(doc?.identificacion?.codigoGeneracion || "").trim().toUpperCase();
+}
+
 function buildCategorias(resultados) {
   return {
     ANEXO_COMPRAS: resultados.ANEXO_COMPRAS.length,
@@ -129,26 +134,59 @@ router.post(
   (req, res, next) => {
     try {
       const files = Array.isArray(req.files) ? req.files : [];
-      const jsonFiles = files.filter((file) => file.originalname.toLowerCase().endsWith(".json"));
-      const items = jsonFiles.map((file) => ({
-        json: parseJsonBuffer(file.buffer, file.originalname),
-        filename: file.originalname,
-      }));
+      const seen = new Set();
+      let duplicados = 0;
+      const items = [];
+      const archivosOriginales = [];
+
+      for (const file of files) {
+        const lowerName = file.originalname.toLowerCase();
+
+        if (!lowerName.endsWith(".json")) {
+          archivosOriginales.push({
+            name: file.originalname,
+            mimetype: file.mimetype,
+            size: file.size,
+            buffer: file.buffer,
+          });
+          continue;
+        }
+
+        const json = parseJsonBuffer(file.buffer, file.originalname);
+        const codigo = extractCodigoGeneracion(json);
+
+        if (codigo && seen.has(codigo)) {
+          duplicados += 1;
+          continue;
+        }
+
+        if (codigo) {
+          seen.add(codigo);
+        }
+
+        items.push({
+          json,
+          filename: file.originalname,
+        });
+
+        archivosOriginales.push({
+          name: file.originalname,
+          mimetype: file.mimetype,
+          size: file.size,
+          buffer: file.buffer,
+        });
+      }
 
       const resultados = classifyMany(items, sessionData.declarante);
 
       sessionData.resultados = resultados;
-      sessionData.archivosOriginales = files.map((file) => ({
-        name: file.originalname,
-        mimetype: file.mimetype,
-        size: file.size,
-        buffer: file.buffer,
-      }));
+      sessionData.archivosOriginales = archivosOriginales;
 
       return res.json({
         ok: true,
         resumen: resultados.resumen,
         categorias: buildCategorias(resultados),
+        duplicados,
       });
     } catch (error) {
       return next(error);
@@ -170,6 +208,8 @@ router.post(
       const entries = zip.getEntries();
       const items = [];
       const archivosOriginales = [];
+      const seen = new Set();
+      let duplicados = 0;
 
       for (const entry of entries) {
         if (entry.isDirectory) {
@@ -181,10 +221,26 @@ router.post(
         const buffer = entry.getData();
 
         if (lowerName.endsWith(".json")) {
+          const json = parseJsonBuffer(buffer, entryName);
+          const codigo = extractCodigoGeneracion(json);
+          if (codigo && seen.has(codigo)) {
+            duplicados += 1;
+            continue;
+          }
+          if (codigo) {
+            seen.add(codigo);
+          }
           items.push({
-            json: parseJsonBuffer(buffer, entryName),
+            json,
             filename: entryName,
           });
+          archivosOriginales.push({
+            name: entryName,
+            size: buffer.length,
+            mimetype: "application/json",
+            buffer,
+          });
+          continue;
         }
 
         if (lowerName.endsWith(".pdf")) {
@@ -192,15 +248,6 @@ router.post(
             name: entryName,
             size: buffer.length,
             mimetype: "application/pdf",
-            buffer,
-          });
-        }
-
-        if (lowerName.endsWith(".json")) {
-          archivosOriginales.push({
-            name: entryName,
-            size: buffer.length,
-            mimetype: "application/json",
             buffer,
           });
         }
@@ -215,6 +262,7 @@ router.post(
         ok: true,
         resumen: resultados.resumen,
         categorias: buildCategorias(resultados),
+        duplicados,
       });
     } catch (error) {
       return next(error);
