@@ -19,6 +19,10 @@ function normalizeValue(value) {
     .toUpperCase();
 }
 
+function normalizeId(value) {
+  return String(value || "").replace(/\D/g, "").replace(/^0+/, "");
+}
+
 function hasValue(value) {
   return normalizeValue(value) !== "";
 }
@@ -30,8 +34,13 @@ function toNumber(value) {
 
 function matchesDeclarante(entity, fieldsToCheck, declaranteValues) {
   return fieldsToCheck.some((field) => {
-    const entityValue = normalizeValue(entity && entity[field]);
-    return entityValue !== "" && declaranteValues.includes(entityValue);
+    const rawValue = entity && entity[field];
+    const entityValue = normalizeValue(rawValue);
+    const entityId = normalizeId(rawValue);
+    return (
+      (entityValue !== "" && declaranteValues.includes(entityValue)) ||
+      (entityId !== "" && declaranteValues.includes(entityId))
+    );
   });
 }
 
@@ -46,7 +55,11 @@ function classifyDocument(json, declarante) {
   const tipoDte = String(identificacion?.tipoDte || "");
 
   const declaranteValues = [declarante?.nit, declarante?.nrc, declarante?.dui]
-    .map(normalizeValue)
+    .flatMap((value) => {
+      const normalizedValue = normalizeValue(value);
+      const normalizedId = normalizeId(value);
+      return [normalizedValue, normalizedId];
+    })
     .filter(Boolean);
 
   const isEmisor = matchesDeclarante(emisor, ["nit", "nrc"], declaranteValues);

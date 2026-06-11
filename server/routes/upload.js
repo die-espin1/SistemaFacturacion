@@ -15,7 +15,6 @@ let sessionData = {
 const filesUpload = multer({
   storage: multer.memoryStorage(),
   limits: {
-    files: 50,
     fileSize: 10 * 1024 * 1024,
   },
 });
@@ -126,7 +125,7 @@ router.get("/declarante", (_req, res) => {
 router.post(
   "/upload/files",
   ensureDeclarante,
-  filesUpload.array("files", 50),
+  filesUpload.array("files"),
   (req, res, next) => {
     try {
       const files = Array.isArray(req.files) ? req.files : [];

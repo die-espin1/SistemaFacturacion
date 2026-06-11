@@ -50,6 +50,11 @@ function buildZipName(declarante) {
   return `IVA_${clean}.zip`;
 }
 
+function buildXlsmName(declarante) {
+  const zipName = buildZipName(declarante);
+  return zipName.replace(/\.zip$/i, ".xlsm");
+}
+
 function buildCategoryMap(resultados) {
   const mapping = new Map();
   const categoryFolders = {
@@ -87,10 +92,8 @@ router.get("/download/xlsm", ensureResultados, async (_req, res, next) => {
       "Content-Type",
       "application/vnd.ms-excel.sheet.macroEnabled.12"
     );
-    res.setHeader(
-      "Content-Disposition",
-      'attachment; filename="plantillaFinal_ABRIL2026.xlsm"'
-    );
+    const xlsmName = buildXlsmName(sessionData.declarante);
+    res.setHeader("Content-Disposition", `attachment; filename="${xlsmName}"`);
 
     return res.send(buffer);
   } catch (error) {
@@ -105,6 +108,7 @@ router.get("/download/zip", ensureResultados, async (_req, res, next) => {
     const xlsmBuffer = await generateXlsm(sessionData.resultados, templatePath);
     const categoryMap = buildCategoryMap(sessionData.resultados);
     const zipName = buildZipName(sessionData.declarante);
+    const xlsmName = buildXlsmName(sessionData.declarante);
 
     res.setHeader("Content-Type", "application/zip");
     res.setHeader("Content-Disposition", `attachment; filename="${zipName}"`);
@@ -113,7 +117,7 @@ router.get("/download/zip", ensureResultados, async (_req, res, next) => {
     archive.on("error", (error) => next(error));
     archive.pipe(res);
 
-    archive.append(xlsmBuffer, { name: "plantillaFinal_ABRIL2026.xlsm" });
+    archive.append(xlsmBuffer, { name: xlsmName });
 
     for (const file of sessionData.archivosOriginales || []) {
       // Intentar por nombre base primero, luego por UUID en el nombre del archivo

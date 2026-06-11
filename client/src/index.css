@@ -1,9 +1,9 @@
 :root {
-  font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+  font-family: "Arial Narrow", Arial, Helvetica, sans-serif;
   line-height: 1.5;
   font-weight: 400;
-  color: #f8fafc;
-  background: linear-gradient(135deg, #0f172a, #1d4ed8);
+  color: #fff;
+  background: #000;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
@@ -14,8 +14,20 @@
   box-sizing: border-box;
 }
 
+html {
+  background: #000;
+}
+
 body {
   margin: 0;
   min-width: 320px;
   min-height: 100vh;
+  background: #000;
+}
+
+button,
+input,
+textarea,
+select {
+  font: inherit;
 }
