@@ -27,6 +27,15 @@ function hasValue(value) {
   return normalizeValue(value) !== "";
 }
 
+const TIPOS_CONTRIBUYENTE = new Set(["36", "37", "03"]);
+
+function isReceptorContribuyente(receptor) {
+  if (hasValue(receptor?.nrc)) return true;
+  if (hasValue(receptor?.nit)) return true;
+  const tipoDoc = String(receptor?.tipoDocumento || "").trim();
+  return TIPOS_CONTRIBUYENTE.has(tipoDoc);
+}
+
 function toNumber(value) {
   const number = Number(value);
   return Number.isFinite(number) ? number : 0;
@@ -102,7 +111,7 @@ function classifyDocument(json, declarante) {
       montoDeducibleISR = toNumber(resumen?.totalGravada) * 0.5;
     }
   } else if (isEmisor) {
-    categoria = hasValue(receptor?.nrc)
+    categoria = isReceptorContribuyente(receptor)
       ? "ANEXO_CONTRIBUYENTES"
       : "ANEXO_CONSUMIDOR_FINAL";
   }
