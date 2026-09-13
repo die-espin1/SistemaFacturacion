@@ -178,6 +178,11 @@ router.post("/export/xlsm", uploadFields, async (req, res, next) => {
 
     return res.send(buffer);
   } catch (error) {
+    if (res.headersSent) {
+      console.error("Error tras enviar headers en /export/xlsm:", error);
+      res.destroy(error);
+      return;
+    }
     return next(error);
   }
 });
@@ -205,7 +210,31 @@ router.post("/export/zip", uploadFields, async (req, res, next) => {
     res.setHeader("Content-Disposition", `attachment; filename="${zipName}"`);
 
     const archive = archiver("zip", { zlib: { level: 9 } });
-    archive.on("error", (error) => next(error));
+
+    archive.on("warning", (err) => {
+      if (err.code === "ENOENT") {
+        console.warn("Advertencia de archiver al generar ZIP:", err);
+      } else {
+        console.error("Error no fatal en archiver:", err);
+      }
+    });
+
+    archive.on("error", (error) => {
+      console.error("Error en archiver al generar ZIP:", error);
+      if (res.headersSent) {
+        // Los headers ya fueron enviados; destruir la conexión para evitar ERR_HTTP_HEADERS_SENT
+        res.destroy(error);
+        return;
+      }
+      return next(error);
+    });
+
+    res.on("close", () => {
+      if (!archive.destroyed) {
+        archive.destroy();
+      }
+    });
+
     archive.pipe(res);
 
     archive.append(xlsmBuffer, { name: xlsmName });
@@ -239,11 +268,22 @@ router.post("/export/zip", uploadFields, async (req, res, next) => {
 
     await archive.finalize();
   } catch (error) {
+    if (res.headersSent) {
+      console.error("Error tras enviar headers en /export/zip:", error);
+      res.destroy(error);
+      return;
+    }
     return next(error);
   }
 });
 
-router.use((error, _req, res, _next) => {
+router.use((error, _req, res, next) => {
+  if (res.headersSent) {
+    // Si los headers ya se enviaron (ej. streaming de ZIP), delegar a Express
+    // para cerrar la conexión limpiamente y evitar ERR_HTTP_HEADERS_SENT.
+    return next(error);
+  }
+
   if (error instanceof multer.MulterError) {
     const message =
       error.code === "LIMIT_FILE_SIZE"

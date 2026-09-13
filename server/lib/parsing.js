@@ -5,12 +5,19 @@ function normalizeText(value) {
 }
 
 function parseJsonBuffer(buffer, sourceName) {
-  // Intentar multiples encodings
-  const encodings = ["utf8", "utf16le", "latin1"];
+  const buf = Buffer.isBuffer(buffer) ? buffer : Buffer.from(buffer);
+
+  // Detectar si el buffer es UTF-8 válido comparando bytes originales con el re-encode.
+  // Si no es UTF-8 válido (ej. Windows-1252 / Latin1 con tildes o Ñ), priorizar latin1
+  // para evitar que JSON.parse tenga éxito sobre caracteres corruptos (/?).
+  const isValidUtf8 = buf.equals(Buffer.from(buf.toString("utf8"), "utf8"));
+  const encodings = isValidUtf8
+    ? ["utf8", "utf16le", "latin1"]
+    : ["latin1", "utf8", "utf16le"];
 
   for (const encoding of encodings) {
     try {
-      let text = buffer.toString(encoding);
+      let text = buf.toString(encoding);
 
       // Remover BOM (UTF-8 y UTF-16)
       text = text.replace(/^\uFEFF/, "").trim();

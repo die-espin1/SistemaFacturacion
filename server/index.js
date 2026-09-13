@@ -5,6 +5,54 @@ const apiRouter = require("./routes/api");
 
 const app = express();
 const PORT = process.env.PORT || 3001;
+let server = null;
+
+// ============================================================================
+// Manejo de resiliencia del proceso en Render / Railway (proceso persistente)
+// ============================================================================
+function handleFatalError(type, error, origin) {
+  console.error(
+    `[FATAL] ${type}${origin ? ` en (${origin})` : ""}:`,
+    error && error.stack ? error.stack : error
+  );
+
+  // Intentar cierre ordenado del servidor HTTP para liberar sockets antes de que Render reinicie
+  if (server && typeof server.close === "function") {
+    server.close(() => {
+      console.error("[FATAL] Servidor cerrado tras error. Saliendo del proceso con código 1.");
+      process.exit(1);
+    });
+
+    // Fallback: forzar salida si alguna conexión queda colgada más de 2 segundos
+    setTimeout(() => {
+      console.error("[FATAL] Tiempo de espera agotado al cerrar conexiones. Forzando salida.");
+      process.exit(1);
+    }, 2000).unref();
+  } else {
+    process.exit(1);
+  }
+}
+
+process.on("uncaughtException", (error, origin) => {
+  handleFatalError("uncaughtException", error, origin);
+});
+
+process.on("unhandledRejection", (reason) => {
+  handleFatalError("unhandledRejection", reason);
+});
+
+process.on("SIGTERM", () => {
+  console.log("Recibido SIGTERM: cerrando servidor HTTP ordenadamente...");
+  if (server && typeof server.close === "function") {
+    server.close(() => {
+      console.log("Servidor cerrado correctamente tras SIGTERM.");
+      process.exit(0);
+    });
+    setTimeout(() => process.exit(0), 5000).unref();
+  } else {
+    process.exit(0);
+  }
+});
 
 // El cliente se sirve desde este mismo servidor Express (Railway/Render) o
 // desde el mismo dominio via rewrites (Vercel), así que en producción las
@@ -54,7 +102,7 @@ app.get(/^(?!\/api).*/, (_req, res, next) => {
 // En Vercel, este módulo se importa y se usa como handler serverless (Express
 // app = función (req, res)), sin listen().
 if (require.main === module) {
-  app.listen(PORT, () => {
+  server = app.listen(PORT, () => {
     console.log(`IVA Clasificador API listening on http://localhost:${PORT}`);
   });
 }
