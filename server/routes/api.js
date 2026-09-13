@@ -191,16 +191,61 @@ router.post("/export/xlsm", uploadFields, async (req, res, next) => {
 // Reprocesa los mismos archivos y devuelve el ZIP organizado (xlsm + DTEs
 // + PDFs por carpeta) directamente en la respuesta, sin estado intermedio.
 router.post("/export/zip", uploadFields, async (req, res, next) => {
+  const startTime = Date.now();
+
+  const logZip = (msg) => {
+    const ts = new Date().toISOString();
+    const elapsed = `+${Date.now() - startTime}ms`;
+    const rssMB = `${Math.round(process.memoryUsage().rss / (1024 * 1024))}MB`;
+    console.log(`[${ts}] [EXPORT_ZIP] [${elapsed}] [RSS: ${rssMB}] ${msg}`);
+  };
+
+  const warnZip = (msg) => {
+    const ts = new Date().toISOString();
+    const elapsed = `+${Date.now() - startTime}ms`;
+    const rssMB = `${Math.round(process.memoryUsage().rss / (1024 * 1024))}MB`;
+    console.warn(`[${ts}] [EXPORT_ZIP] [ADVERTENCIA] [${elapsed}] [RSS: ${rssMB}] ${msg}`);
+  };
+
+  const errorZip = (msg, err) => {
+    const ts = new Date().toISOString();
+    const elapsed = `+${Date.now() - startTime}ms`;
+    const rssMB = `${Math.round(process.memoryUsage().rss / (1024 * 1024))}MB`;
+    console.error(`[${ts}] [EXPORT_ZIP] [ERROR] [${elapsed}] [RSS: ${rssMB}] ${msg}`, err || "");
+  };
+
   try {
+    const { files, zipFile } = getFilesFromRequest(req);
+    const totalFilesCount = files.length + (zipFile ? 1 : 0);
+    const totalIncomingBytes =
+      files.reduce((acc, f) => acc + (f.size || f.buffer?.length || 0), 0) +
+      (zipFile ? (zipFile.size || zipFile.buffer?.length || 0) : 0);
+
+    logZip(
+      `Entrada al handler: ${files.length} archivo(s) sueltos, ` +
+      `zipFile: ${zipFile ? `${zipFile.originalname} (${zipFile.size || 0} bytes)` : "ninguno"} | ` +
+      `Total: ${totalFilesCount} archivo(s), ${totalIncomingBytes} bytes (~${(totalIncomingBytes / (1024 * 1024)).toFixed(2)}MB)`
+    );
+
     const declarante = parseDeclarante(req.body);
     validateDeclarante(declarante);
 
-    const { files, zipFile } = getFilesFromRequest(req);
+    logZip("Iniciando collectItems...");
     const { items, archivosOriginales, parseErrors } = collectItems({ files, zipFile });
+    logZip(
+      `collectItems completado: ${items.length} items clasificados, ` +
+      `${archivosOriginales.length} archivos originales (incl. PDFs), ${parseErrors.length} errores de parseo`
+    );
+
     const resultados = mergeParseErrors(classifyMany(items, declarante), parseErrors);
 
     const templatePath = path.resolve(__dirname, "../templates/plantilla.xlsm");
+    logZip("Iniciando generateXlsm...");
     const xlsmBuffer = await generateXlsm(resultados, templatePath);
+    logZip(
+      `generateXlsm completado: tamaño buffer ${xlsmBuffer.length} bytes (~${Math.round(xlsmBuffer.length / 1024)}KB)`
+    );
+
     const categoryMap = buildCategoryMap(resultados);
     const pdfMap = buildPdfMap(archivosOriginales);
     const zipName = buildZipName(declarante);
@@ -209,18 +254,21 @@ router.post("/export/zip", uploadFields, async (req, res, next) => {
     res.setHeader("Content-Type", "application/zip");
     res.setHeader("Content-Disposition", `attachment; filename="${zipName}"`);
 
+    let archiveCompleted = false;
+    let resFinished = false;
+
     const archive = archiver("zip", { zlib: { level: 9 } });
 
     archive.on("warning", (err) => {
       if (err.code === "ENOENT") {
-        console.warn("Advertencia de archiver al generar ZIP:", err);
+        warnZip(`Advertencia de archiver al generar ZIP: ${err.message}`);
       } else {
-        console.error("Error no fatal en archiver:", err);
+        errorZip("Error no fatal en archiver:", err);
       }
     });
 
     archive.on("error", (error) => {
-      console.error("Error en archiver al generar ZIP:", error);
+      errorZip("Error en archiver al generar ZIP:", error);
       if (res.headersSent) {
         // Los headers ya fueron enviados; destruir la conexión para evitar ERR_HTTP_HEADERS_SENT
         res.destroy(error);
@@ -229,16 +277,40 @@ router.post("/export/zip", uploadFields, async (req, res, next) => {
       return next(error);
     });
 
+    archive.on("end", () => {
+      archiveCompleted = true;
+      logZip(
+        `archive 'end' emitido: ZIP generado completamente en servidor ` +
+        `(${archive.pointer()} bytes comprimidos)`
+      );
+    });
+
+    res.on("finish", () => {
+      resFinished = true;
+      logZip("res 'finish' emitido: Respuesta enviada exitosamente al cliente.");
+    });
+
     res.on("close", () => {
+      if (!archiveCompleted || !resFinished) {
+        warnZip(
+          `res 'close' emitido antes de completar el ZIP (archiveCompleted: ${archiveCompleted}, resFinished: ${resFinished}). ` +
+          "Esto confirma que el cliente o el proxy de Render cortó la conexión antes de finalizar el stream."
+        );
+      } else {
+        logZip("res 'close' emitido normalmente tras finalizar.");
+      }
+
       if (!archive.destroyed) {
         archive.destroy();
       }
     });
 
+    logZip(`Conectando archive.pipe(res) e iniciando empaquetado para ${zipName}...`);
     archive.pipe(res);
 
     archive.append(xlsmBuffer, { name: xlsmName });
 
+    let appendedCount = 1; // xlsmBuffer ya incluido
     for (const file of archivosOriginales || []) {
       if (String(file?.name || "").toLowerCase().endsWith(".pdf")) {
         continue;
@@ -254,6 +326,7 @@ router.post("/export/zip", uploadFields, async (req, res, next) => {
       }
 
       archive.append(file.buffer, { name: `${folder}/${path.basename(file.name)}` });
+      appendedCount++;
 
       const pdfFile =
         pdfMap.get(baseName) ||
@@ -263,13 +336,18 @@ router.post("/export/zip", uploadFields, async (req, res, next) => {
         archive.append(pdfFile.buffer, {
           name: `${folder}/${path.basename(pdfFile.name)}`,
         });
+        appendedCount++;
       }
     }
 
+    logZip(`Archivos agregados al ZIP: ${appendedCount}. Invocando archive.finalize()...`);
     await archive.finalize();
+    logZip("archive.finalize() retornado; esperando vaciado de stream...");
   } catch (error) {
+    const elapsed = `+${Date.now() - startTime}ms`;
+    const rssMB = `${Math.round(process.memoryUsage().rss / (1024 * 1024))}MB`;
+    console.error(`[${new Date().toISOString()}] [EXPORT_ZIP] [ERROR] [${elapsed}] [RSS: ${rssMB}] Excepción capturada en handler:`, error);
     if (res.headersSent) {
-      console.error("Error tras enviar headers en /export/zip:", error);
       res.destroy(error);
       return;
     }
