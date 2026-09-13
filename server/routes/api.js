@@ -3,7 +3,7 @@ const path = require("path");
 const multer = require("multer");
 const archiver = require("archiver");
 
-const { classifyMany } = require("../classifier");
+const { classifyMany, mergeParseErrors } = require("../classifier");
 const { generateXlsm } = require("../xlsm-generator");
 const { parseDeclarante, collectItems, buildCategorias } = require("../lib/parsing");
 
@@ -142,8 +142,8 @@ router.post("/classify", uploadFields, (req, res, next) => {
     validateDeclarante(declarante);
 
     const { files, zipFile } = getFilesFromRequest(req);
-    const { items, duplicados } = collectItems({ files, zipFile });
-    const resultados = classifyMany(items, declarante);
+    const { items, duplicados, parseErrors } = collectItems({ files, zipFile });
+    const resultados = mergeParseErrors(classifyMany(items, declarante), parseErrors);
 
     return res.json({
       ok: true,
@@ -166,8 +166,8 @@ router.post("/export/xlsm", uploadFields, async (req, res, next) => {
     validateDeclarante(declarante);
 
     const { files, zipFile } = getFilesFromRequest(req);
-    const { items } = collectItems({ files, zipFile });
-    const resultados = classifyMany(items, declarante);
+    const { items, parseErrors } = collectItems({ files, zipFile });
+    const resultados = mergeParseErrors(classifyMany(items, declarante), parseErrors);
 
     const templatePath = path.resolve(__dirname, "../templates/plantilla.xlsm");
     const buffer = await generateXlsm(resultados, templatePath);
@@ -191,8 +191,8 @@ router.post("/export/zip", uploadFields, async (req, res, next) => {
     validateDeclarante(declarante);
 
     const { files, zipFile } = getFilesFromRequest(req);
-    const { items, archivosOriginales } = collectItems({ files, zipFile });
-    const resultados = classifyMany(items, declarante);
+    const { items, archivosOriginales, parseErrors } = collectItems({ files, zipFile });
+    const resultados = mergeParseErrors(classifyMany(items, declarante), parseErrors);
 
     const templatePath = path.resolve(__dirname, "../templates/plantilla.xlsm");
     const xlsmBuffer = await generateXlsm(resultados, templatePath);

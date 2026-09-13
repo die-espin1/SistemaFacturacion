@@ -92,9 +92,19 @@ function collectItems({ files = [], zipFile = null }) {
   let duplicados = 0;
   const items = [];
   const archivosOriginales = [];
+  const parseErrors = [];
 
   const tryAddJson = (name, buffer, mimetype) => {
-    const json = parseJsonBuffer(buffer, name);
+    let json;
+    try {
+      json = parseJsonBuffer(buffer, name);
+    } catch (error) {
+      // No dejamos que un archivo corrupto tumbe todo el lote: lo registramos
+      // como error y seguimos con el resto de archivos.
+      parseErrors.push({ filename: name, razon: error.message || "JSON inválido" });
+      return;
+    }
+
     const codigo = extractCodigoGeneracion(json);
 
     if (codigo && seen.has(codigo)) {
@@ -158,7 +168,7 @@ function collectItems({ files = [], zipFile = null }) {
     }
   }
 
-  return { items, archivosOriginales, duplicados };
+  return { items, archivosOriginales, duplicados, parseErrors };
 }
 
 module.exports = {

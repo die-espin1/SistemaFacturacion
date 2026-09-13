@@ -163,8 +163,36 @@ function classifyMany(jsonArray, declarante) {
   };
 }
 
+function mergeParseErrors(resultados, parseErrors) {
+  if (!parseErrors || !parseErrors.length) {
+    return resultados;
+  }
+
+  for (const { filename, razon } of parseErrors) {
+    resultados.ERROR.push({
+      categoria: "ERROR",
+      razon,
+      archivo: filename,
+      filename,
+      isCombustible: false,
+      montoDeducibleISR: null,
+      doc: null,
+      emisor: null,
+      receptor: null,
+      resumen: null,
+      tipoDte: null,
+    });
+  }
+
+  resultados.resumen.total += parseErrors.length;
+  resultados.resumen.porCategoria.ERROR = resultados.ERROR.length;
+
+  return resultados;
+}
+
 module.exports = {
   normalizeDoc,
   classifyDocument,
   classifyMany,
+  mergeParseErrors,
 };
