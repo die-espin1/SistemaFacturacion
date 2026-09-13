@@ -4,7 +4,10 @@
   "version": "1.0.0",
   "scripts": {
     "dev": "concurrently \"npm run dev --prefix server\" \"npm run dev --prefix client\"",
-    "install:all": "npm install && npm install --prefix client && npm install --prefix server"
+    "install:all": "npm install && npm install --prefix client && npm install --prefix server",
+    "vercel-build": "npm run build --prefix client",
+    "build": "npm run install:all && npm run build --prefix client",
+    "start": "node server/index.js"
   },
   "dependencies": {
     "concurrently": "^9.2.1"

@@ -1,4 +1,3 @@
-import axios from 'axios'
 import { useState } from 'react'
 import toast from 'react-hot-toast'
 
@@ -11,14 +10,13 @@ const initialForm = {
 
 function DeclaranteForm({ onSuccess }) {
   const [form, setForm] = useState(initialForm)
-  const [loading, setLoading] = useState(false)
 
   const handleChange = (event) => {
     const { name, value } = event.target
     setForm((current) => ({ ...current, [name]: value }))
   }
 
-  const handleSubmit = async (event) => {
+  const handleSubmit = (event) => {
     event.preventDefault()
 
     if (!form.nombre.trim()) {
@@ -31,23 +29,15 @@ function DeclaranteForm({ onSuccess }) {
       return
     }
 
-    setLoading(true)
-
-    try {
-      const response = await axios.post('/api/declarante', {
-        nit: form.nit.trim(),
-        nrc: form.nrc.trim(),
-        dui: form.dui.trim(),
-        nombre: form.nombre.trim(),
-      })
-
-      onSuccess(response.data.declarante)
-      toast.success('Declarante configurado')
-    } catch (error) {
-      toast.error(error.response?.data?.error || 'No se pudo guardar el declarante')
-    } finally {
-      setLoading(false)
-    }
+    // El declarante ya no se guarda en el servidor: viaja junto con los
+    // archivos en cada request (/api/classify, /api/export/xlsm, /api/export/zip).
+    onSuccess({
+      nit: form.nit.trim(),
+      nrc: form.nrc.trim(),
+      dui: form.dui.trim(),
+      nombre: form.nombre.trim(),
+    })
+    toast.success('Declarante configurado')
   }
 
   return (
@@ -102,8 +92,8 @@ function DeclaranteForm({ onSuccess }) {
           />
         </label>
 
-        <button className="primary-button" type="submit" disabled={loading}>
-          {loading ? 'GUARDANDO...' : 'CONTINUAR →'}
+        <button className="primary-button" type="submit">
+          CONTINUAR →
         </button>
       </form>
 

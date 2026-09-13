@@ -22,7 +22,23 @@ function getFilenameFromResponse(response) {
   return null
 }
 
-function DownloadPanel({ resultados, onReset }) {
+function buildExportFormData(declarante, uploadPayload) {
+  const formData = new FormData()
+  formData.append('nit', declarante?.nit || '')
+  formData.append('nrc', declarante?.nrc || '')
+  formData.append('dui', declarante?.dui || '')
+  formData.append('nombre', declarante?.nombre || '')
+
+  if (uploadPayload?.zipFile) {
+    formData.append('file', uploadPayload.zipFile)
+  } else if (uploadPayload?.files?.length) {
+    uploadPayload.files.forEach((file) => formData.append('files', file))
+  }
+
+  return formData
+}
+
+function DownloadPanel({ declarante, resultados, uploadPayload, onReset }) {
   const [downloadingXlsm, setDownloadingXlsm] = useState(false)
   const [downloadingZip, setDownloadingZip] = useState(false)
 
@@ -31,7 +47,8 @@ function DownloadPanel({ resultados, onReset }) {
   const handleDownloadXlsm = async () => {
     setDownloadingXlsm(true)
     try {
-      const response = await axios.get('/api/download/xlsm', { responseType: 'blob' })
+      const formData = buildExportFormData(declarante, uploadPayload)
+      const response = await axios.post('/api/export/xlsm', formData, { responseType: 'blob' })
       const filename = getFilenameFromResponse(response) || 'plantilla.xlsm'
       triggerDownload(response.data, filename)
       toast.success('Plantilla Excel descargada')
@@ -45,7 +62,8 @@ function DownloadPanel({ resultados, onReset }) {
   const handleDownloadZip = async () => {
     setDownloadingZip(true)
     try {
-      const response = await axios.get('/api/download/zip', { responseType: 'blob' })
+      const formData = buildExportFormData(declarante, uploadPayload)
+      const response = await axios.post('/api/export/zip', formData, { responseType: 'blob' })
       const filename = getFilenameFromResponse(response) || 'IVA.zip'
       triggerDownload(response.data, filename)
       toast.success('ZIP organizado descargado')

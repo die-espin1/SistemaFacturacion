@@ -3,14 +3,16 @@ import { useMemo, useRef, useState } from 'react'
 import { useDropzone } from 'react-dropzone'
 import toast from 'react-hot-toast'
 
-async function fetchResultados() {
-  const response = await axios.get('/api/resultados')
-  return response.data.resultados
-}
-
 function buildQuickSummary(resultados) {
   const resumen = resultados?.resumen?.porCategoria || {}
   return `${resultados?.resumen?.total || 0} facturas procesadas - ${resumen.ANEXO_COMPRAS || 0} COMPRAS · ${resumen.ANEXO_CONSUMIDOR_FINAL || 0} CF · ${resumen.ANEXO_CONTRIBUYENTES || 0} CONTRIBUYENTES · ${resumen.CASILLA_162 || 0} CASILLA 162`
+}
+
+function appendDeclarante(formData, declarante) {
+  formData.append('nit', declarante?.nit || '')
+  formData.append('nrc', declarante?.nrc || '')
+  formData.append('dui', declarante?.dui || '')
+  formData.append('nombre', declarante?.nombre || '')
 }
 
 function UploadZone({ declarante, resultados, onSuccess, onContinue }) {
@@ -20,13 +22,12 @@ function UploadZone({ declarante, resultados, onSuccess, onContinue }) {
   const folderInputRef = useRef(null)
   const zipInputRef = useRef(null)
 
-  const processSuccess = async (responseData) => {
-    const fullResultados = await fetchResultados()
-    onSuccess(fullResultados)
-    setQuickSummary(buildQuickSummary(fullResultados))
+  const handleProcessed = (data, payload) => {
+    onSuccess(data.resultados, payload)
+    setQuickSummary(buildQuickSummary(data.resultados))
     toast.success('Facturas procesadas correctamente')
 
-    const errorCount = responseData?.resumen?.porCategoria?.ERROR || 0
+    const errorCount = data?.categorias?.ERROR || 0
     if (errorCount > 0) {
       toast(errorCount === 1 ? '1 factura no pudo clasificarse' : `${errorCount} facturas no pudieron clasificarse`, {
         icon: '⚠',
@@ -41,12 +42,13 @@ function UploadZone({ declarante, resultados, onSuccess, onContinue }) {
     }
 
     const formData = new FormData()
+    appendDeclarante(formData, declarante)
     files.forEach((file) => formData.append('files', file))
 
     setLoading(true)
     try {
-      const response = await axios.post('/api/upload/files', formData)
-      await processSuccess(response.data)
+      const response = await axios.post('/api/classify', formData)
+      handleProcessed(response.data, { files })
     } catch (error) {
       toast.error(error.response?.data?.error || 'No se pudieron procesar los archivos')
     } finally {
@@ -60,12 +62,13 @@ function UploadZone({ declarante, resultados, onSuccess, onContinue }) {
     }
 
     const formData = new FormData()
+    appendDeclarante(formData, declarante)
     formData.append('file', file)
 
     setLoading(true)
     try {
-      const response = await axios.post('/api/upload/zip', formData)
-      await processSuccess(response.data)
+      const response = await axios.post('/api/classify', formData)
+      handleProcessed(response.data, { zipFile: file })
     } catch (error) {
       toast.error(error.response?.data?.error || 'No se pudo procesar el archivo ZIP')
     } finally {

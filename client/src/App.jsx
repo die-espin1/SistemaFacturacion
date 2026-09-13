@@ -10,20 +10,26 @@ function App() {
   const [step, setStep] = useState(1)
   const [declarante, setDeclarante] = useState(null)
   const [resultados, setResultados] = useState(null)
+  // Guardamos los File originales (no solo el resultado) porque el backend
+  // es stateless: para exportar el xlsm/zip hay que reenviar los mismos
+  // archivos junto con el declarante en cada request.
+  const [uploadPayload, setUploadPayload] = useState(null) // { files: File[] } | { zipFile: File }
 
   const handleDeclaranteSaved = (nextDeclarante) => {
     setDeclarante(nextDeclarante)
     setStep(2)
   }
 
-  const handleUploadSuccess = (nextResultados) => {
+  const handleUploadSuccess = (nextResultados, payload) => {
     setResultados(nextResultados)
+    setUploadPayload(payload)
   }
 
   const resetFlow = () => {
     setStep(1)
     setDeclarante(null)
     setResultados(null)
+    setUploadPayload(null)
   }
 
   return (
@@ -66,7 +72,9 @@ function App() {
           )}
           {step === 4 && (
             <DownloadPanel
+              declarante={declarante}
               resultados={resultados}
+              uploadPayload={uploadPayload}
               onReset={resetFlow}
             />
           )}
