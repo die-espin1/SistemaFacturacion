@@ -90,6 +90,8 @@ function classifyDocument(json, declarante) {
       receptor,
       resumen,
       tipoDte,
+      isEmisor: false,
+      isReceptor: false,
     };
   }
 
@@ -98,11 +100,43 @@ function classifyDocument(json, declarante) {
   let montoDeducibleISR = null;
 
   if (tipoDte === "07") {
-    categoria = "CASILLA_162";
-  } else if (tipoDte === "11") {
-    categoria = "DOCUMENTO_LIQUIDACION";
+    // 07: Comprobante de Retención
+    // Si el declarante es RECEPTOR: Le retuvieron IVA -> CASILLA 162 (retenciones recibidas)
+    // Si el declarante es EMISOR: El declarante efectuó la retención -> Documento emitido
+    if (isReceptor) {
+      categoria = "CASILLA_162";
+    } else if (isEmisor) {
+      categoria = isReceptorContribuyente(receptor)
+        ? "ANEXO_CONTRIBUYENTES"
+        : "ANEXO_CONSUMIDOR_FINAL";
+    }
+  } else if (tipoDte === "11" || tipoDte === "08") {
+    // 11: Factura de Exportación / 08: Comprobante de Liquidación
+    // Si el declarante es EMISOR: Documento emitido de exportación/liquidación
+    // Si el declarante es RECEPTOR: Documento recibido -> ANEXO_COMPRAS
+    if (isEmisor) {
+      categoria = "DOCUMENTO_LIQUIDACION";
+    } else if (isReceptor) {
+      categoria = "ANEXO_COMPRAS";
+      isCombustible = isCombustibleIssuer(emisor);
+      if (isCombustible) {
+        montoDeducibleISR = toNumber(resumen?.totalGravada) * 0.5;
+      }
+    }
   } else if (tipoDte === "14") {
-    categoria = "SUJETO_EXCLUIDO";
+    // 14: Factura de Sujeto Excluido
+    // Quien compra emite el DTE 14 al sujeto excluido.
+    // Si el declarante es EMISOR: Emisión propia por compra a sujeto excluido -> SUJETO_EXCLUIDO
+    // Si el declarante es RECEPTOR: Documento recibido -> ANEXO_COMPRAS
+    if (isEmisor) {
+      categoria = "SUJETO_EXCLUIDO";
+    } else if (isReceptor) {
+      categoria = "ANEXO_COMPRAS";
+      isCombustible = isCombustibleIssuer(emisor);
+      if (isCombustible) {
+        montoDeducibleISR = toNumber(resumen?.totalGravada) * 0.5;
+      }
+    }
   } else if (isReceptor) {
     categoria = "ANEXO_COMPRAS";
     isCombustible = isCombustibleIssuer(emisor);
@@ -118,6 +152,8 @@ function classifyDocument(json, declarante) {
 
   return {
     categoria,
+    isEmisor,
+    isReceptor,
     isCombustible,
     montoDeducibleISR,
     doc,

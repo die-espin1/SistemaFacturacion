@@ -180,6 +180,61 @@ async function generateXlsm(resultados, templatePath) {
     }
   }
 
+  // === DETALLE DE DOCUMENTOS ===
+  // Poblar con todos los DTEs clasificados (todas las categorías emisoras).
+  // Columnas según la plantilla:
+  //   A: NÚMERO DE RESOLUCIÓN  → numeroControl del DTE
+  //   B: CLASE DE DOCUMENTO    → "4. DOCUMENTO TRIBUTARIO ELECTRÓNICO DTE"
+  //   C: DESDE (PREIMPRESO)    → 0 (no aplica para DTE)
+  //   D: HASTA (PREIMPRESO)    → 0 (no aplica para DTE)
+  //   E: TIPO DE DOCUMENTO     → tipoDteLabel(tipoDte)  ← era el bug
+  //   F: TIPO DE DETALLE       → "E. DOCUMENTO DTE EMITIDO"
+  //   G: NÚMERO DE SERIE       → codigoGeneracion
+  //   H: DESDE                 → 0
+  //   I: HASTA                 → 0
+  //   J: CÓDIGO DE GENERACIÓN  → selloRecibido / selloRecepcion (si existe)
+  const wsDetalle = workbook.sheet("DETALLE DE DOCUMENTOS");
+  const DETALLE_COLS = ["A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K"];
+
+  // Limpiar filas demo de la plantilla (desde fila 3 hasta que no haya más datos)
+  let clearRow = 3;
+  while (
+    wsDetalle.cell(`A${clearRow}`).value() ||
+    wsDetalle.cell(`G${clearRow}`).value()
+  ) {
+    DETALLE_COLS.forEach((col) => wsDetalle.cell(`${col}${clearRow}`).value(null));
+    clearRow++;
+    if (clearRow > 10002) break; // límite de seguridad
+  }
+
+  // Recolectar todos los ítems emisores en un array plano.
+  // ANEXO_COMPRAS y CASILLA_162 son documentos *recibidos* → no van en DETALLE DE DOCUMENTOS.
+  const itemsDetalle = [
+    ...(resultados.ANEXO_CONTRIBUYENTES || []),
+    ...(resultados.ANEXO_CONSUMIDOR_FINAL || []),
+    ...(resultados.DOCUMENTO_LIQUIDACION || []),
+    ...(resultados.SUJETO_EXCLUIDO || []),
+  ].filter((item) => item.isEmisor === true || (item.isEmisor !== false && item.isReceptor !== true));
+
+  row = 3;
+  for (const item of itemsDetalle) {
+    const id = item.doc?.identificacion || {};
+    wsDetalle.cell(`A${row}`).value(id.numeroControl || "");
+    wsDetalle
+      .cell(`B${row}`)
+      .value("4. DOCUMENTO TRIBUTARIO ELECTRÓNICO DTE")
+      .style("numberFormat", "@");
+    wsDetalle.cell(`C${row}`).value(0);
+    wsDetalle.cell(`D${row}`).value(0);
+    wsDetalle.cell(`E${row}`).value(tipoDteLabel(item.tipoDte));
+    wsDetalle.cell(`F${row}`).value("E. DOCUMENTO DTE EMITIDO");
+    wsDetalle.cell(`G${row}`).value(id.codigoGeneracion || "");
+    wsDetalle.cell(`H${row}`).value(0);
+    wsDetalle.cell(`I${row}`).value(0);
+    wsDetalle.cell(`J${row}`).value(id.selloRecibido || id.selloRecepcion || "");
+    row++;
+  }
+
   // Retornar buffer
   return workbook.outputAsync();
 }
