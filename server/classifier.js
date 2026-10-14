@@ -1,8 +1,22 @@
 function normalizeDoc(json) {
   const doc = (json && json.DTE) || (json && json.dteJson) || json || {};
+  const identificacion = { ...(doc.identificacion || {}) };
+  const selloRecibido =
+    json?.selloRecibido ||
+    json?.respuestaHacienda?.selloRecibido ||
+    json?.respuestaMH?.selloRecibido ||
+    doc.selloRecibido ||
+    doc.respuestaHacienda?.selloRecibido ||
+    doc.respuestaMH?.selloRecibido ||
+    identificacion.selloRecibido ||
+    "";
+
+  if (selloRecibido) {
+    identificacion.selloRecibido = selloRecibido;
+  }
 
   return {
-    identificacion: doc.identificacion || {},
+    identificacion,
     emisor: doc.emisor || {},
     receptor: doc.receptor || {},
     resumen: doc.resumen || {},
@@ -187,6 +201,13 @@ function classifyMany(jsonArray, declarante) {
     grouped[key].push(enriched);
   }
 
+  const withoutSeal = [
+    ...grouped.ANEXO_CONTRIBUYENTES,
+    ...grouped.ANEXO_CONSUMIDOR_FINAL,
+    ...grouped.CASILLA_162,
+  ]
+    .filter((item) => !item.doc?.identificacion?.selloRecibido).length;
+
   return {
     ...grouped,
     resumen: {
@@ -200,6 +221,7 @@ function classifyMany(jsonArray, declarante) {
         SUJETO_EXCLUIDO: grouped.SUJETO_EXCLUIDO.length,
         ERROR: grouped.ERROR.length,
       },
+      sinSello: withoutSeal,
     },
   };
 }

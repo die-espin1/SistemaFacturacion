@@ -29,6 +29,7 @@ function ResultsPanel({ resultados, onContinue }) {
     }),
     [resultados]
   )
+  const sinSello = resultados?.resumen?.sinSello || 0
 
   const renderTable = () => {
     if (!resultados) {
@@ -226,6 +227,13 @@ function ResultsPanel({ resultados, onContinue }) {
           </button>
         ))}
       </div>
+
+      {sinSello > 0 && (
+        <div className="notice-strip">
+          <strong>{sinSello}</strong>
+          <span>{sinSello === 1 ? 'documento quedó sin sello.' : 'documentos quedaron sin sello.'}</span>
+        </div>
+      )}
 
       <div className="table-shell">{renderTable()}</div>
 

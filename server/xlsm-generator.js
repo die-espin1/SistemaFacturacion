@@ -18,6 +18,24 @@ function tipoDteLabel(tipoDte) {
   return map[tipoDte] || tipoDte;
 }
 
+function tipoDteLabelContribuyentes(tipoDte) {
+  const map = {
+    "05": "05 NOTA DE CRÉDITO",
+  };
+  return map[tipoDte] || tipoDteLabel(tipoDte);
+}
+
+function cleanDteText(value) {
+  return String(value || "")
+    .replace(/\s+/g, "")
+    .trim()
+    .toUpperCase();
+}
+
+function writeText(cell, value) {
+  cell.value(cleanDteText(value)).style("numberFormat", "@");
+}
+
 // Formato de fecha como Date object para Excel
 function formatDate(dateStr) {
   if (!dateStr) return null;
@@ -110,9 +128,9 @@ async function generateXlsm(resultados, templatePath) {
       .value(formatDate(item.doc?.identificacion?.fecEmi))
       .style("numberFormat", "dd/mm/yyyy");
     wsContrib.cell(`B${row}`).value("4. DOCUMENTO TRIBUTARIO ELECTRONICO (DTE)").style("numberFormat", "@");
-    wsContrib.cell(`C${row}`).value(tipoDteLabel(item.tipoDte));
-    wsContrib.cell(`D${row}`).value("");
-    wsContrib.cell(`E${row}`).value(item.doc?.identificacion?.codigoGeneracion || "");
+    wsContrib.cell(`C${row}`).value(tipoDteLabelContribuyentes(item.tipoDte));
+    writeText(wsContrib.cell(`D${row}`), item.doc?.identificacion?.codigoGeneracion);
+    writeText(wsContrib.cell(`E${row}`), item.doc?.identificacion?.selloRecibido);
     wsContrib.cell(`F${row}`).value(item.doc?.identificacion?.numeroControl || "");
     wsContrib.cell(`G${row}`).value(item.doc?.identificacion?.numeroControl || "");
     wsContrib.cell(`H${row}`).value(item.receptor?.nit || item.receptor?.nrc || "");
@@ -139,10 +157,10 @@ async function generateXlsm(resultados, templatePath) {
       .cell(`A${row}`)
       .value(formatDate(item.doc?.identificacion?.fecEmi))
       .style("numberFormat", "dd/mm/yyyy");
-    wsCf.cell(`B${row}`).value("4. DOCUMENTO TRIBUTARIO ELECTRONICO (DTE)").style("numberFormat", "@");
+    wsCf.cell(`B${row}`).value("4. DOCUMENTO TRIBUTARIO ELECTRÓNICO (DTE)").style("numberFormat", "@");
     wsCf.cell(`C${row}`).value(tipoDteLabel(item.tipoDte));
-    wsCf.cell(`D${row}`).value("");
-    wsCf.cell(`E${row}`).value(item.doc?.identificacion?.codigoGeneracion || "");
+    writeText(wsCf.cell(`D${row}`), item.doc?.identificacion?.codigoGeneracion);
+    writeText(wsCf.cell(`E${row}`), item.doc?.identificacion?.selloRecibido);
     wsCf.cell(`F${row}`).value(item.doc?.identificacion?.numeroControl || "");
     wsCf.cell(`G${row}`).value(item.doc?.identificacion?.numeroControl || "");
     wsCf.cell(`H${row}`).value(item.doc?.identificacion?.numeroControl || "");
@@ -177,14 +195,13 @@ async function generateXlsm(resultados, templatePath) {
   row = 3;
   for (const item of resultados.CASILLA_162 || []) {
     const cuerpo = item.doc?.cuerpoDocumento || [];
-    const numControl = item.doc?.identificacion?.numeroControl || "";
-    const numCorto = numControl.split("-").pop() || numControl;
     for (const cuerpoItem of cuerpo) {
+      const id = item.doc?.identificacion || {};
       ws162.cell(`A${row}`).value(item.emisor?.nit || "");
-      ws162.cell(`B${row}`).value(formatDateString(item.doc?.identificacion?.fecEmi));
-      ws162.cell(`C${row}`).value("07 COMPROBANTE DE RETENCION");
-      ws162.cell(`D${row}`).value(item.doc?.identificacion?.codigoGeneracion || "");
-      ws162.cell(`E${row}`).value(numCorto);
+      ws162.cell(`B${row}`).value(formatDateString(id.fecEmi));
+      ws162.cell(`C${row}`).value("07 COMPROBANTE DE RETENCIÓN");
+      writeText(ws162.cell(`D${row}`), id.selloRecibido);
+      ws162.cell(`E${row}`).value(id.numeroControl || "");
       ws162.cell(`F${row}`).value(cuerpoItem.montoSujetoGrav || 0);
       ws162.cell(`G${row}`).value(cuerpoItem.ivaRetenido || 0);
       ws162.cell(`H${row}`).value("");
@@ -193,18 +210,7 @@ async function generateXlsm(resultados, templatePath) {
   }
 
   // === DETALLE DE DOCUMENTOS ===
-  // Poblar con todos los DTEs clasificados (todas las categorías emisoras).
-  // Columnas según la plantilla:
-  //   A: NÚMERO DE RESOLUCIÓN  → numeroControl del DTE
-  //   B: CLASE DE DOCUMENTO    → "4. DOCUMENTO TRIBUTARIO ELECTRÓNICO DTE"
-  //   C: DESDE (PREIMPRESO)    → 0 (no aplica para DTE)
-  //   D: HASTA (PREIMPRESO)    → 0 (no aplica para DTE)
-  //   E: TIPO DE DOCUMENTO     → tipoDteLabel(tipoDte)  ← era el bug
-  //   F: TIPO DE DETALLE       → "E. DOCUMENTO DTE EMITIDO"
-  //   G: NÚMERO DE SERIE       → codigoGeneracion
-  //   H: DESDE                 → 0
-  //   I: HASTA                 → 0
-  //   J: CÓDIGO DE GENERACIÓN  → selloRecibido / selloRecepcion (si existe)
+  // DTE no se vuelca en esta hoja; solo se limpian las filas de la plantilla.
   const wsDetalle = workbook.sheet("DETALLE DE DOCUMENTOS");
   const DETALLE_COLS = ["A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K"];
 
@@ -218,35 +224,6 @@ async function generateXlsm(resultados, templatePath) {
     clearRow++;
     if (clearRow > 10002) break; // límite de seguridad
   }
-
-  // Recolectar todos los ítems emisores en un array plano.
-  // ANEXO_COMPRAS y CASILLA_162 son documentos *recibidos* → no van en DETALLE DE DOCUMENTOS.
-  const itemsDetalle = [
-    ...(resultados.ANEXO_CONTRIBUYENTES || []),
-    ...(resultados.ANEXO_CONSUMIDOR_FINAL || []),
-    ...(resultados.DOCUMENTO_LIQUIDACION || []),
-    ...(resultados.SUJETO_EXCLUIDO || []),
-  ].filter((item) => item.isEmisor === true || (item.isEmisor !== false && item.isReceptor !== true));
-
-  row = 3;
-  for (const item of itemsDetalle) {
-    const id = item.doc?.identificacion || {};
-    wsDetalle.cell(`A${row}`).value(id.numeroControl || "");
-    wsDetalle
-      .cell(`B${row}`)
-      .value("4. DOCUMENTO TRIBUTARIO ELECTRÓNICO DTE")
-      .style("numberFormat", "@");
-    wsDetalle.cell(`C${row}`).value(0);
-    wsDetalle.cell(`D${row}`).value(0);
-    wsDetalle.cell(`E${row}`).value(tipoDteLabel(item.tipoDte));
-    wsDetalle.cell(`F${row}`).value("E. DOCUMENTO DTE EMITIDO");
-    wsDetalle.cell(`G${row}`).value(id.codigoGeneracion || "");
-    wsDetalle.cell(`H${row}`).value(0);
-    wsDetalle.cell(`I${row}`).value(0);
-    wsDetalle.cell(`J${row}`).value(id.selloRecibido || id.selloRecepcion || "");
-    row++;
-  }
-
   // Retornar buffer
   return workbook.outputAsync();
 }

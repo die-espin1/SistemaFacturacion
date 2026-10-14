@@ -282,6 +282,22 @@
   color: #000;
 }
 
+.notice-strip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
+  width: fit-content;
+  padding: 0.85rem 1rem;
+  border: 1px solid #facc15;
+  background: rgba(250, 204, 21, 0.12);
+  color: #fff;
+}
+
+.notice-strip strong {
+  color: #facc15;
+  font-size: 1.15rem;
+}
+
 .table-shell {
   overflow: auto;
   border: 1px solid rgba(255, 255, 255, 0.16);
