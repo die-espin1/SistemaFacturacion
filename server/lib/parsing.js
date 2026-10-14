@@ -37,6 +37,25 @@ function parseJsonBuffer(buffer, sourceName) {
     }
   }
 
+  // Formato JWS compacto: "encabezado.contenido.firma" en base64url. Es la firma
+  // electrónica del DTE; el documento real está en la parte del medio.
+  try {
+    const raw = buf
+      .toString("utf8")
+      .replace(/^\uFEFF/, "")
+      .trim()
+      .replace(/^"|"$/g, "");
+    const parts = raw.split(".");
+    if (parts.length === 3 && parts[1] && parts.every((p) => /^[A-Za-z0-9_-]*$/.test(p))) {
+      const payload = JSON.parse(Buffer.from(parts[1], "base64url").toString("utf8"));
+      if (payload && typeof payload === "object") {
+        return payload;
+      }
+    }
+  } catch {
+    // no era un JWS válido, se sigue con el último intento
+  }
+
   // Ultimo intento: el JSON puede estar como string escapado dentro de otro JSON
   try {
     const text = buffer.toString("utf8").replace(/^\uFEFF/, "").trim();
@@ -94,7 +113,11 @@ function parseDeclarante(body) {
  *
  * No depende de ningún estado guardado en el servidor entre requests.
  */
-function collectItems({ files = [], zipFile = null }) {
+function collectItems({ files = [], zipFile = null, zipFiles = [] }) {
+  // Acepta uno o varios ZIPs. Los DTE repetidos entre ZIPs se descartan por
+  // codigoGeneracion (el Set `seen` es compartido), y los PDF se emparejan con
+  // su JSON aunque vengan en otro ZIP.
+  const allZips = [...(zipFiles || []), ...(zipFile ? [zipFile] : [])];
   const seen = new Set();
   let duplicados = 0;
   const items = [];
@@ -108,7 +131,19 @@ function collectItems({ files = [], zipFile = null }) {
     } catch (error) {
       // No dejamos que un archivo corrupto tumbe todo el lote: lo registramos
       // como error y seguimos con el resto de archivos.
-      parseErrors.push({ filename: name, razon: error.message || "JSON inválido" });
+      parseErrors.push({
+        filename: name,
+        razon: error.message || "JSON inválido",
+        buffer,
+        mimetype: mimetype || "application/json",
+        size: buffer.length,
+      });
+      archivosOriginales.push({
+        name,
+        mimetype: mimetype || "application/json",
+        size: buffer.length,
+        buffer,
+      });
       return;
     }
 
@@ -148,8 +183,8 @@ function collectItems({ files = [], zipFile = null }) {
     tryAddJson(file.originalname, file.buffer, file.mimetype);
   }
 
-  if (zipFile) {
-    const zip = new AdmZip(zipFile.buffer);
+  for (const zipItem of allZips) {
+    const zip = new AdmZip(zipItem.buffer);
 
     for (const entry of zip.getEntries()) {
       if (entry.isDirectory) {

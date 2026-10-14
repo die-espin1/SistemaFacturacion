@@ -177,7 +177,49 @@ async function testXlsmGeneration() {
   console.log("¡Todas las pruebas pasaron satisfactoriamente!");
 }
 
-testXlsmGeneration().catch((err) => {
-  console.error("Error en la prueba de generación XLSM:", err);
-  process.exit(1);
-});
+testXlsmGeneration()
+  .then(testCombustible50)
+  .catch((err) => {
+    console.error("Error en la prueba de generación XLSM:", err);
+    process.exit(1);
+  });
+
+// ==========================================
+// 5. Combustible: 50% deducible se divide entre 2 en el Excel
+// ==========================================
+async function testCombustible50() {
+  console.log("--- Verificando combustible 50% en ANEXO DE COMPRAS ---");
+  const mk = (id, emisor, gravada) => ({
+    identificacion: { tipoDte: "03", numeroControl: `N-${id}`, codigoGeneracion: `U-${id}`, fecEmi: "2026-08-15" },
+    emisor,
+    receptor: { nit: declarante.nit, nrc: declarante.nrc, nombre: declarante.nombre },
+    resumen: {
+      totalGravada: gravada,
+      totalExenta: 0,
+      tributos: [{ codigo: "20", valor: Number((gravada * 0.13).toFixed(2)) }],
+      montoTotalOperacion: Number((gravada * 1.13).toFixed(2)),
+    },
+  });
+  const gasolinera = { nit: "06141111111111", nrc: "111", nombre: "GASOLINERA UNO", descActividad: "Venta al por menor de combustibles" };
+
+  const resultados = classifyMany(
+    [
+      { json: mk(1, gasolinera, 100), filename: "gas.json" },
+      { json: mk(2, otroContribuyente, 100), filename: "ferreteria.json" },
+    ],
+    declarante
+  );
+  const buffer = await generateXlsm(resultados, path.resolve(__dirname, "templates/plantilla.xlsm"));
+  const ws = (await XlsxPopulate.fromDataAsync(buffer)).sheet("ANEXO DE COMPRAS");
+
+  // Fila 3: combustible -> mitad
+  assert.strictEqual(ws.cell("J3").value(), 50, "Gravada combustible debe ser 50");
+  assert.strictEqual(ws.cell("N3").value(), 6.5, "Crédito fiscal combustible debe ser 6.5");
+  assert.strictEqual(ws.cell("O3").value(), 56.5, "Total combustible debe ser 56.5");
+  // Fila 4: no combustible -> intacto
+  assert.strictEqual(ws.cell("J4").value(), 100, "Gravada normal no se divide");
+  assert.strictEqual(ws.cell("N4").value(), 13, "Crédito fiscal normal no se divide");
+  assert.strictEqual(ws.cell("O4").value(), 113, "Total normal no se divide");
+
+  console.log("¡Combustible 50% verificado en el Excel!");
+}

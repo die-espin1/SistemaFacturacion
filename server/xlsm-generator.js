@@ -53,6 +53,16 @@ function getIva(resumen) {
   return parseFloat(((resumen?.totalGravada || 0) * 0.13).toFixed(2));
 }
 
+// Combustible: solo el 50% es deducible. Si el documento fue detectado como
+// combustible (item.isCombustible), los montos se dividen entre 2 en el Excel.
+const FACTOR_COMBUSTIBLE = 0.5;
+
+function aplicarFactorCombustible(item, valor) {
+  const n = Number(valor) || 0;
+  if (!item?.isCombustible) return n;
+  return Math.round(n * FACTOR_COMBUSTIBLE * 100) / 100;
+}
+
 async function generateXlsm(resultados, templatePath) {
   // Cargar la plantilla preservando VBA/macros
   const workbook = await XlsxPopulate.fromFileAsync(path.resolve(templatePath));
@@ -71,15 +81,17 @@ async function generateXlsm(resultados, templatePath) {
     wsCompras.cell(`D${row}`).value(item.doc?.identificacion?.numeroControl || "");
     wsCompras.cell(`E${row}`).value(item.emisor?.nit || item.emisor?.nrc || "");
     wsCompras.cell(`F${row}`).value(item.emisor?.nombre || "");
-    wsCompras.cell(`G${row}`).value(r.totalExenta || 0);
+    wsCompras.cell(`G${row}`).value(aplicarFactorCombustible(item, r.totalExenta || 0));
     wsCompras.cell(`H${row}`).value(0);
     wsCompras.cell(`I${row}`).value(0);
-    wsCompras.cell(`J${row}`).value(r.totalGravada || 0);
+    wsCompras.cell(`J${row}`).value(aplicarFactorCombustible(item, r.totalGravada || 0));
     wsCompras.cell(`K${row}`).value(0);
     wsCompras.cell(`L${row}`).value(0);
     wsCompras.cell(`M${row}`).value(0);
-    wsCompras.cell(`N${row}`).value(getIva(r));
-    wsCompras.cell(`O${row}`).value(r.montoTotalOperacion || r.totalPagar || 0);
+    wsCompras.cell(`N${row}`).value(aplicarFactorCombustible(item, getIva(r)));
+    wsCompras.cell(`O${row}`).value(
+      aplicarFactorCombustible(item, r.montoTotalOperacion || r.totalPagar || 0)
+    );
     wsCompras.cell(`P${row}`).value("");
     wsCompras.cell(`Q${row}`).value("1 Gravada");
     wsCompras.cell(`R${row}`).value("2 Gasto");

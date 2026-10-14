@@ -28,6 +28,10 @@ function hasValue(value) {
 }
 
 const TIPOS_CONTRIBUYENTE = new Set(["36", "37", "03"]);
+const TIPOS_ERROR = {
+  JSON_INVALIDO: "JSON_INVALIDO",
+  DECLARANTE_NO_ENCONTRADO: "DECLARANTE_NO_ENCONTRADO",
+};
 
 function isReceptorContribuyente(receptor) {
   if (hasValue(receptor?.nrc)) return true;
@@ -81,6 +85,7 @@ function classifyDocument(json, declarante) {
   if (!isEmisor && !isReceptor) {
     return {
       categoria: "ERROR",
+      tipoError: TIPOS_ERROR.DECLARANTE_NO_ENCONTRADO,
       razon: "Declarante no encontrado en el documento",
       archivo: "",
       isCombustible: false,
@@ -207,6 +212,7 @@ function mergeParseErrors(resultados, parseErrors) {
   for (const { filename, razon } of parseErrors) {
     resultados.ERROR.push({
       categoria: "ERROR",
+      tipoError: TIPOS_ERROR.JSON_INVALIDO,
       razon,
       archivo: filename,
       filename,
@@ -227,6 +233,7 @@ function mergeParseErrors(resultados, parseErrors) {
 }
 
 module.exports = {
+  TIPOS_ERROR,
   normalizeDoc,
   classifyDocument,
   classifyMany,

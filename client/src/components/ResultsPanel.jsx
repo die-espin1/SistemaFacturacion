@@ -54,22 +54,29 @@ function ResultsPanel({ resultados, onContinue }) {
             </tr>
           </thead>
           <tbody>
-            {rows.map((item) => (
-              <tr key={item.filename} className={item.isCombustible ? 'row-highlight' : ''}>
-                <td>{item.doc?.identificacion?.fecEmi}</td>
-                <td>{item.emisor?.nombre}</td>
-                <td>{item.emisor?.nit || item.emisor?.nrc}</td>
-                <td>{formatNumber(item.resumen?.montoTotalOperacion || item.resumen?.totalPagar)}</td>
-                <td>{formatNumber(item.montoDeducibleISR ? item.resumen?.tributos?.find?.((tributo) => tributo.codigo === '20')?.valor || item.resumen?.totalGravada * 0.13 : item.resumen?.tributos?.find?.((tributo) => tributo.codigo === '20')?.valor || item.resumen?.totalGravada * 0.13)}</td>
-                <td>
-                  {item.isCombustible ? (
-                    <span className="status-badge status-badge--fuel">50% DEDUCIBLE</span>
-                  ) : (
-                    'No'
-                  )}
-                </td>
-              </tr>
-            ))}
+            {rows.map((item) => {
+              const factor = item.isCombustible ? 0.5 : 1
+              const iva =
+                item.resumen?.tributos?.find?.((tributo) => tributo.codigo === '20')?.valor ??
+                (item.resumen?.totalGravada || 0) * 0.13
+              const total = item.resumen?.montoTotalOperacion || item.resumen?.totalPagar
+              return (
+                <tr key={item.filename} className={item.isCombustible ? 'row-highlight' : ''}>
+                  <td>{item.doc?.identificacion?.fecEmi}</td>
+                  <td>{item.emisor?.nombre}</td>
+                  <td>{item.emisor?.nit || item.emisor?.nrc}</td>
+                  <td>{formatNumber(Number(total || 0) * factor)}</td>
+                  <td>{formatNumber(Number(iva || 0) * factor)}</td>
+                  <td>
+                    {item.isCombustible ? (
+                      <span className="status-badge status-badge--fuel">50% DEDUCIBLE</span>
+                    ) : (
+                      'No'
+                    )}
+                  </td>
+                </tr>
+              )
+            })}
           </tbody>
         </table>
       )

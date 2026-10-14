@@ -29,11 +29,8 @@ function buildExportFormData(declarante, uploadPayload) {
   formData.append('dui', declarante?.dui || '')
   formData.append('nombre', declarante?.nombre || '')
 
-  if (uploadPayload?.zipFile) {
-    formData.append('file', uploadPayload.zipFile)
-  } else if (uploadPayload?.files?.length) {
-    uploadPayload.files.forEach((file) => formData.append('files', file))
-  }
+  ;(uploadPayload?.zipFiles || []).forEach((file) => formData.append('file', file))
+  ;(uploadPayload?.files || []).forEach((file) => formData.append('files', file))
 
   return formData
 }

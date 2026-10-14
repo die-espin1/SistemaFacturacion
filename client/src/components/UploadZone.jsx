@@ -15,6 +15,19 @@ function appendDeclarante(formData, declarante) {
   formData.append('nombre', declarante?.nombre || '')
 }
 
+function splitFiles(list) {
+  const zipFiles = []
+  const files = []
+  for (const file of list || []) {
+    if (/\.zip$/i.test(file.name)) {
+      zipFiles.push(file)
+    } else {
+      files.push(file)
+    }
+  }
+  return { files, zipFiles }
+}
+
 function UploadZone({ declarante, resultados, onSuccess, onContinue }) {
   const [loading, setLoading] = useState(false)
   const [quickSummary, setQuickSummary] = useState('')
@@ -36,19 +49,23 @@ function UploadZone({ declarante, resultados, onSuccess, onContinue }) {
     }
   }
 
-  const uploadFiles = async (files) => {
-    if (!files?.length) {
+  // Sube en un solo request cualquier mezcla de archivos sueltos y ZIPs.
+  // Los File originales se conservan en el payload para reenviarlos al exportar.
+  const uploadAll = async (list) => {
+    const { files, zipFiles } = splitFiles(list)
+    if (!files.length && !zipFiles.length) {
       return
     }
 
     const formData = new FormData()
     appendDeclarante(formData, declarante)
     files.forEach((file) => formData.append('files', file))
+    zipFiles.forEach((file) => formData.append('file', file))
 
     setLoading(true)
     try {
       const response = await axios.post('/api/classify', formData)
-      handleProcessed(response.data, { files })
+      handleProcessed(response.data, { files, zipFiles })
     } catch (error) {
       toast.error(error.response?.data?.error || 'No se pudieron procesar los archivos')
     } finally {
@@ -56,29 +73,9 @@ function UploadZone({ declarante, resultados, onSuccess, onContinue }) {
     }
   }
 
-  const uploadZip = async (file) => {
-    if (!file) {
-      return
-    }
-
-    const formData = new FormData()
-    appendDeclarante(formData, declarante)
-    formData.append('file', file)
-
-    setLoading(true)
-    try {
-      const response = await axios.post('/api/classify', formData)
-      handleProcessed(response.data, { zipFile: file })
-    } catch (error) {
-      toast.error(error.response?.data?.error || 'No se pudo procesar el archivo ZIP')
-    } finally {
-      setLoading(false)
-    }
-  }
-
   const onDrop = async (acceptedFiles) => {
-    const files = acceptedFiles.filter((file) => /\.(json|pdf)$/i.test(file.name))
-    await uploadFiles(files)
+    const valid = acceptedFiles.filter((file) => /\.(json|pdf|zip)$/i.test(file.name))
+    await uploadAll(valid)
   }
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
@@ -112,7 +109,7 @@ function UploadZone({ declarante, resultados, onSuccess, onContinue }) {
         <div className="upload-copy">
           <p className="upload-title">ARRASTRA TUS FACTURAS AQUÍ</p>
           <p className="upload-subtitle">
-            Acepta: archivos .json individuales, carpeta completa, o archivo .zip
+            Acepta: archivos .json/.pdf, carpeta completa, o uno o varios archivos .zip a la vez
           </p>
           {loading && <div className="loading-pill">PROCESANDO FACTURAS...</div>}
         </div>
@@ -141,7 +138,7 @@ function UploadZone({ declarante, resultados, onSuccess, onContinue }) {
           onClick={() => zipInputRef.current?.click()}
           disabled={loading}
         >
-          SUBIR ZIP
+          SUBIR ZIP(S)
         </button>
       </div>
 
@@ -151,7 +148,7 @@ function UploadZone({ declarante, resultados, onSuccess, onContinue }) {
         type="file"
         multiple
         accept=".json,.pdf"
-        onChange={(event) => uploadFiles(Array.from(event.target.files || []))}
+        onChange={(event) => uploadAll(Array.from(event.target.files || []))}
       />
 
       <input
@@ -159,7 +156,7 @@ function UploadZone({ declarante, resultados, onSuccess, onContinue }) {
         className="hidden-input"
         type="file"
         multiple
-        onChange={(event) => uploadFiles(Array.from(event.target.files || []))}
+        onChange={(event) => uploadAll(Array.from(event.target.files || []))}
         webkitdirectory=""
         directory=""
       />
@@ -168,8 +165,9 @@ function UploadZone({ declarante, resultados, onSuccess, onContinue }) {
         ref={zipInputRef}
         className="hidden-input"
         type="file"
+        multiple
         accept=".zip"
-        onChange={(event) => uploadZip(event.target.files?.[0])}
+        onChange={(event) => uploadAll(Array.from(event.target.files || []))}
       />
 
       {quickSummary && (

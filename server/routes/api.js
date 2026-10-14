@@ -9,10 +9,9 @@ const { parseDeclarante, collectItems, buildCategorias } = require("../lib/parsi
 
 const router = express.Router();
 
-// Límite conservador: Vercel Functions rechaza cualquier request con body > 4.5MB
-// (ver https://vercel.com/docs/functions/limitations). Se deja margen para el resto
-// del multipart (headers, boundaries, campos de texto del declarante, etc).
-const MAX_FILE_SIZE = 4 * 1024 * 1024;
+// Límite por archivo para Render. Permite ZIPs grandes con muchas facturas
+// sin rechazar la subida por el antiguo límite de Vercel.
+const MAX_FILE_SIZE = 100 * 1024 * 1024;
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -23,8 +22,8 @@ const upload = multer({
 
 // Un mismo endpoint acepta tanto archivos sueltos ("files") como un .zip ("file").
 const uploadFields = upload.fields([
-  { name: "files", maxCount: 200 },
-  { name: "file", maxCount: 1 },
+  { name: "files", maxCount: 2000 },
+  { name: "file", maxCount: 20 },
 ]);
 
 function validateDeclarante(declarante) {
@@ -38,7 +37,7 @@ function validateDeclarante(declarante) {
 function getFilesFromRequest(req) {
   return {
     files: req.files?.files || [],
-    zipFile: req.files?.file?.[0] || null,
+    zipFiles: req.files?.file || [],
   };
 }
 
@@ -110,6 +109,27 @@ function buildCategoryMap(resultados) {
   return mapping;
 }
 
+function buildErrorMap(resultados) {
+  const mapping = new Map();
+
+  for (const item of resultados.ERROR || []) {
+    const tipoError = item.tipoError || "ERROR";
+    const folder = `ERROR/${tipoError}`;
+
+    const baseName = normalizeBaseName(item.filename);
+    if (baseName) {
+      mapping.set(baseName, folder);
+    }
+
+    const codigo = item.doc?.identificacion?.codigoGeneracion;
+    if (codigo) {
+      mapping.set(codigo.toLowerCase(), folder);
+    }
+  }
+
+  return mapping;
+}
+
 function buildPdfMap(archivosOriginales) {
   const pdfMap = new Map();
 
@@ -132,6 +152,23 @@ function buildPdfMap(archivosOriginales) {
   return pdfMap;
 }
 
+function buildUniqueArchiveName(archiveNames, folder, filename) {
+  const parsed = path.parse(path.basename(filename));
+  const ext = parsed.ext || "";
+  const base = parsed.name || "archivo";
+  const prefix = folder ? `${folder}/` : "";
+  let candidate = `${prefix}${base}${ext}`;
+  let index = 2;
+
+  while (archiveNames.has(candidate.toLowerCase())) {
+    candidate = `${prefix}${base} (${index})${ext}`;
+    index++;
+  }
+
+  archiveNames.add(candidate.toLowerCase());
+  return candidate;
+}
+
 // POST /api/classify
 // Recibe declarante + archivos (o zip) en un único request y devuelve la
 // clasificación completa. No guarda nada en el servidor: todo vive en la
@@ -141,8 +178,8 @@ router.post("/classify", uploadFields, (req, res, next) => {
     const declarante = parseDeclarante(req.body);
     validateDeclarante(declarante);
 
-    const { files, zipFile } = getFilesFromRequest(req);
-    const { items, duplicados, parseErrors } = collectItems({ files, zipFile });
+    const { files, zipFiles } = getFilesFromRequest(req);
+    const { items, duplicados, parseErrors } = collectItems({ files, zipFiles });
     const resultados = mergeParseErrors(classifyMany(items, declarante), parseErrors);
 
     return res.json({
@@ -165,8 +202,8 @@ router.post("/export/xlsm", uploadFields, async (req, res, next) => {
     const declarante = parseDeclarante(req.body);
     validateDeclarante(declarante);
 
-    const { files, zipFile } = getFilesFromRequest(req);
-    const { items, parseErrors } = collectItems({ files, zipFile });
+    const { files, zipFiles } = getFilesFromRequest(req);
+    const { items, parseErrors } = collectItems({ files, zipFiles });
     const resultados = mergeParseErrors(classifyMany(items, declarante), parseErrors);
 
     const templatePath = path.resolve(__dirname, "../templates/plantilla.xlsm");
@@ -215,15 +252,15 @@ router.post("/export/zip", uploadFields, async (req, res, next) => {
   };
 
   try {
-    const { files, zipFile } = getFilesFromRequest(req);
-    const totalFilesCount = files.length + (zipFile ? 1 : 0);
+    const { files, zipFiles } = getFilesFromRequest(req);
+    const totalFilesCount = files.length + zipFiles.length;
     const totalIncomingBytes =
       files.reduce((acc, f) => acc + (f.size || f.buffer?.length || 0), 0) +
-      (zipFile ? (zipFile.size || zipFile.buffer?.length || 0) : 0);
+      zipFiles.reduce((acc, z) => acc + (z.size || z.buffer?.length || 0), 0);
 
     logZip(
       `Entrada al handler: ${files.length} archivo(s) sueltos, ` +
-      `zipFile: ${zipFile ? `${zipFile.originalname} (${zipFile.size || 0} bytes)` : "ninguno"} | ` +
+      `zips: ${zipFiles.length ? zipFiles.map((z) => `${z.originalname} (${z.size || 0} bytes)`).join(", ") : "ninguno"} | ` +
       `Total: ${totalFilesCount} archivo(s), ${totalIncomingBytes} bytes (~${(totalIncomingBytes / (1024 * 1024)).toFixed(2)}MB)`
     );
 
@@ -231,7 +268,7 @@ router.post("/export/zip", uploadFields, async (req, res, next) => {
     validateDeclarante(declarante);
 
     logZip("Iniciando collectItems...");
-    const { items, archivosOriginales, parseErrors } = collectItems({ files, zipFile });
+    const { items, archivosOriginales, parseErrors } = collectItems({ files, zipFiles });
     logZip(
       `collectItems completado: ${items.length} items clasificados, ` +
       `${archivosOriginales.length} archivos originales (incl. PDFs), ${parseErrors.length} errores de parseo`
@@ -247,6 +284,7 @@ router.post("/export/zip", uploadFields, async (req, res, next) => {
     );
 
     const categoryMap = buildCategoryMap(resultados);
+    const errorMap = buildErrorMap(resultados);
     const pdfMap = buildPdfMap(archivosOriginales);
     const zipName = buildZipName(declarante);
     const xlsmName = buildXlsmName(declarante);
@@ -308,7 +346,8 @@ router.post("/export/zip", uploadFields, async (req, res, next) => {
     logZip(`Conectando archive.pipe(res) e iniciando empaquetado para ${zipName}...`);
     archive.pipe(res);
 
-    archive.append(xlsmBuffer, { name: xlsmName });
+    const archiveNames = new Set();
+    archive.append(xlsmBuffer, { name: buildUniqueArchiveName(archiveNames, "", xlsmName) });
 
     let appendedCount = 1; // xlsmBuffer ya incluido
     for (const file of archivosOriginales || []) {
@@ -319,13 +358,17 @@ router.post("/export/zip", uploadFields, async (req, res, next) => {
       const baseName = normalizeBaseName(file.name);
       const folder =
         categoryMap.get(baseName) ||
-        categoryMap.get(extractUuidFromName(file.name));
+        categoryMap.get(extractUuidFromName(file.name)) ||
+        errorMap.get(baseName) ||
+        errorMap.get(extractUuidFromName(file.name));
 
       if (!folder || !file.buffer) {
         continue;
       }
 
-      archive.append(file.buffer, { name: `${folder}/${path.basename(file.name)}` });
+      archive.append(file.buffer, {
+        name: buildUniqueArchiveName(archiveNames, folder, file.name),
+      });
       appendedCount++;
 
       const pdfFile =
@@ -334,7 +377,7 @@ router.post("/export/zip", uploadFields, async (req, res, next) => {
 
       if (pdfFile?.buffer) {
         archive.append(pdfFile.buffer, {
-          name: `${folder}/${path.basename(pdfFile.name)}`,
+          name: buildUniqueArchiveName(archiveNames, folder, pdfFile.name),
         });
         appendedCount++;
       }
